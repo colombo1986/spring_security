@@ -10,26 +10,25 @@ https://spring.io/guides/topicals/spring-security-architecture#:~:text=The%20fil
 
 package io.security.userservice.security;
 
+import io.security.userservice.auth.ApplicationUserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 
-import static io.security.userservice.security.ApplicationUserPermission.*;
+import java.util.concurrent.TimeUnit;
+
 import static io.security.userservice.security.ApplicationUserRole.*;
-import static org.springframework.security.config.Customizer.withDefaults;
 
 @Configuration
 @EnableWebSecurity
@@ -37,89 +36,51 @@ import static org.springframework.security.config.Customizer.withDefaults;
 public class ApplicationSecurityConfig {
 
     private final PasswordEncoder passwordEncoder ;
+    private final ApplicationUserService applicationUserService;
 
     @Autowired
-    public ApplicationSecurityConfig(PasswordEncoder passwordEncoder) {
+    public ApplicationSecurityConfig(PasswordEncoder passwordEncoder, ApplicationUserService applicationUserService) {
         this.passwordEncoder = passwordEncoder;
+        this.applicationUserService = applicationUserService;
     }
 
 
     @Bean
     @Order(0)
     SecurityFilterChain resources(HttpSecurity http) throws Exception {
+
         http
                 .csrf().disable()
                 .authorizeRequests()
-                    .antMatchers("/index", "/css/*","/js/*").permitAll()
-                    .antMatchers("/api/**").hasRole(STUDENT.name())
-                    /*.antMatchers(HttpMethod.DELETE,"/managment/api/**").hasAuthority(COURSE_WRITE.getPermission())
-                    .antMatchers(HttpMethod.POST,"/managment/api/**").hasAuthority(COURSE_WRITE.getPermission())
-                    .antMatchers(HttpMethod.PUT,"/managment/api/**").hasAuthority(COURSE_WRITE.getPermission())
-                    .antMatchers("/managment/api/**").hasAnyRole(ADMIN.name(), ADMINTRAINEE.name())*/
+                .antMatchers("/login","/index", "/css/*","/js/*").permitAll()
+                .antMatchers("/api/**").hasRole(STUDENT.name())
                 .anyRequest()
-                  .authenticated()
-                  .and().httpBasic() /*.and().csrf().disable()*/ ;
+                .authenticated()
+                    .and()
+                    .formLogin()
+                    .loginPage("/login")
+                    .loginProcessingUrl("/login")
+                    .defaultSuccessUrl("/courses",true)
+                        .and()
+                         .rememberMe().tokenValiditySeconds((int)TimeUnit.DAYS.toSeconds(21))
+                         .key("uniqueAndSecret")
+                         .userDetailsService(applicationUserService)
+                          .and()
+                                .logout()
+                                .logoutUrl("/logout")
+                                .logoutRequestMatcher(new AntPathRequestMatcher("/logout", "GET"))
+                                .clearAuthentication(true)
+                                .invalidateHttpSession(true)
+                                .deleteCookies("JSESSIONID", "remember-me")
+                                .logoutSuccessUrl("/login");
 
 
 
         return http.build();
     }
-
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .authorizeHttpRequests((authz) -> authz.anyRequest().authenticated())
-                .httpBasic(withDefaults()) ;
-
-
-
-        return http.build();
-    }
-
-    @Bean
-    protected UserDetailsService userDetailsService(){
-        UserDetails annaSmithUser = User.builder()
-                .username("annasmith")
-                .password(passwordEncoder.encode("password"))
-               // .roles(STUDENT.name()) //ROLE_USER
-                .authorities(STUDENT.getGrantedAuthorities())
-                .build();
-
-        UserDetails lindaUser = User.builder()
-                .username("linda")
-                .password(passwordEncoder.encode("password123"))
-                //.roles(ADMIN.name()) //ROLE_ADMIN
-                .authorities(ADMIN.getGrantedAuthorities())
-                .build();
-
-        UserDetails tomUser = User.builder()
-                .username("tom")
-                .password(passwordEncoder.encode("password123"))
-                //.roles(ADMINTRAINEE.name()) //ROLE_ADMINTRAINEE
-                .authorities(ADMINTRAINEE.getGrantedAuthorities()) //ROLE_ADMINTRAINEE
-                .build();
-
-        return new InMemoryUserDetailsManager(annaSmithUser, lindaUser, tomUser) ;
-    }
-
-
 
 }
 
-/*
-for demos
-//https://stackoverflow.com/questions/49847791/java-spring-security-user-withdefaultpasswordencoder-is-deprecated
-    @Bean
-    public UserDetailsService userDetailsService() {
-
-        User.UserBuilder users = User.withDefaultPasswordEncoder();
-        InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
-        manager.createUser(users.username("annasmith").password("password").roles("STUDENT").build());
-        manager.createUser(users.username("admin").password("password").roles("USER", "ADMIN").build());
-        return manager;
-
-    }
- */
 
 
 
